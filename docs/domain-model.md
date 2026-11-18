@@ -1,13 +1,13 @@
 # Anode domain model (Phase 1)
 
-Status: **Stage 1 draft, awaiting Michael's approval.** Nothing in this document is migrated yet.
-Stage 2 turns it into Supabase migrations exactly as approved.
+Status: **Approved by Michael on 18 Nov 2026**, with the decisions in [section 13](#13-decisions).
+Nothing in this document is migrated yet. Stage 2 turns it into Supabase migrations exactly as approved.
 
 Source of requirements: [`PRD.md`](PRD.md). Business rules are cited as **R1** to **R10**
 (PRD, "Business rules", rules 1 to 10). Other PRD requirements are cited as **P-** tags,
 defined in [section 10](#10-traceability). Assumptions are **A1** onwards, listed in
-[section 12](#12-assumptions). Open questions that need Michael's call are **Q1** onwards,
-listed in [section 13](#13-questions-for-michael).
+[section 12](#12-assumptions). Michael's decisions on the Stage 1 review are **D1** onwards,
+listed in [section 13](#13-decisions).
 
 ## Contents
 
@@ -23,7 +23,7 @@ listed in [section 13](#13-questions-for-michael).
 10. [Traceability](#10-traceability)
 11. [Deferred to later phases](#11-deferred-to-later-phases)
 12. [Assumptions](#12-assumptions)
-13. [Questions for Michael](#13-questions-for-michael)
+13. [Decisions](#13-decisions)
 
 ---
 
@@ -47,8 +47,9 @@ The PRD's five core objects map to entities as follows:
 | Report | `report` + `report_inspection` | |
 
 Supporting entities: tenancy (`organisation`, `profile`, `membership`), reference data
-(`standard`, `severity_level`, `mechanism`, `recommendation`, `context_question`) and
-`measurement` (the vision model's output, kept separate from the grade it produced).
+(`standard`, `severity_level`, `mechanism`, `recommendation`, `context_question`),
+`measurement` (the vision model's output, kept separate from the grade it produced) and
+`audit_event` (the append-only audit log, D8).
 
 ## 2. Conventions
 
@@ -60,7 +61,7 @@ These apply to every table unless the table says otherwise.
 | Tenancy | Every tenant-owned table has `org_id uuid not null`. Child tables reference their parent by the composite key `(org_id, parent_id)` so a row can never point at another organisation's data (C1). |
 | Timestamps | `created_at timestamptz not null default now()`. Mutable tables also have `updated_at`, maintained by trigger. All times are stored in UTC. |
 | Authorship | `created_by uuid` references `profile(id)` where a person creates the row. Rows written by the AI pipeline have `created_by null` and an explicit `origin` (C20). |
-| Deletion | Assets and inspection points are archived (`archived_at`), never hard-deleted once they have an inspection. Nothing referenced by a signed report can be deleted or changed (C30). |
+| Deletion | Assets and inspection points are archived (`archived_at`), never hard-deleted once they have an inspection. Nothing referenced by a signed or voided report can be deleted, and a signed report is never edited (C30, D7). |
 | Names | Tables are singular `snake_case`. Enumerations are Postgres enum types (section 5); reference data that carries text or versions is a table (section 4.2). |
 | Reference data | Global (no `org_id`), seeded by migration, read-only to every user. |
 
@@ -94,7 +95,9 @@ erDiagram
     finding ||--o| finding_review : "decided by"
     organisation ||--o{ report : owns
     report ||--o{ report_inspection : covers
-    inspection ||--o| report_inspection : "included in"
+    inspection ||--o{ report_inspection : "included in"
+    report ||--o| report : replaces
+    organisation ||--o{ audit_event : records
 ```
 
 ## 4. Entities
@@ -192,7 +195,8 @@ The fixed recommendation library (R8). The explain step can only reference rows 
 | `min_severity` | `severity` | yes | Optional floor; for example a UT grid is not offered for S1 |
 | `is_active` | boolean | no | |
 
-The Phase 1 library content is for Michael to write (Q6). Seeded in Stage 2.
+Claude drafts the Phase 1 library in Stage 5 and Michael corrects it as the domain expert (D5).
+Stage 2 creates the table and loads only test fixtures.
 
 #### E8 `context_question`
 
@@ -208,6 +212,7 @@ Fixed questions asked at capture time; answers feed mechanism ranking (R7).
 | `is_active` | boolean | no | |
 
 Asset-level facts (material, coating, environment, insulation) live on `asset`, not here (A9).
+As with recommendations, Claude drafts the Phase 1 questions in Stage 5 and Michael corrects them (D5).
 
 ### 4.3 Asset register
 
@@ -293,8 +298,9 @@ the retake history is visible (A6).
 | `captured_at` | timestamptz | yes | From the device, if known | |
 | `gradeability` | `gradeability` | no | `pending`, `gradeable`, `rejected`; default `pending` | R1 |
 | `rejection_reasons` | `photo_rejection_reason[]` | no | default `{}`. `out_of_focus`, `uneven_lighting`, `glare`, `no_scale_reference`, `surface_not_visible` | R1 |
-| `scale_reference` | `scale_reference` | no | `coin`, `ruler`, `marker`, `none`; default `none` | R1 |
+| `scale_reference` | `scale_reference` | no | `anode_scale_card` (preferred), `ruler`, `tape_measure`, `none`; default `none`. Coins are not accepted (D6) | R1 |
 | `mm_per_px` | numeric(10,6) | yes | Derived from the scale reference; > 0 | R1 |
+| `colour_corrected` | boolean | no | default `false`. `true` when colour was corrected from the scale card's grey and colour patches; only possible with `anode_scale_card` (C9a) | R1, D6 |
 | `checked_at` | timestamptz | yes | When the gradeability check ran | R1 |
 | `uploaded_by`, `created_at` | | | | |
 
@@ -334,11 +340,12 @@ a new `inspector` finding supersedes it and the original is kept as feedback (R9
 | `measurement_id` | uuid | yes | FK `(org_id, measurement_id)`; required when `origin = 'ai'` (C12) | P-AI |
 | `origin` | `finding_origin` | no | `ai` or `inspector` | R9 |
 | `supersedes_finding_id` | uuid | yes | FK `(org_id, id)` on `finding`; set only on `inspector` findings (C21) | R9 |
+| `revision_reason` | text | yes | Required on an `inspector` finding that supersedes an already-accepted finding after a void (C21a, D7) | R9, D7 |
 | `defect_type` | `defect_type` | no | `rusting`, `pitting`, `suspected_cracking`, `coating_breakdown`, `other` | P-OBJ |
 | `standard_id` | uuid | no | FK `standard`; must be active when created (C13) | R2, P-CITE |
 | `grade_value` | smallint | no | Within the standard's `grade_min`..`grade_max` (C13) | R2 |
 | `rules_severity` | `severity` | no | Severity the grading rules gave before the confidence adjustment | R4 |
-| `severity` | `severity` | no | Final severity; never lower than `rules_severity` for AI findings (C15) | R2, R3, R4 |
+| `severity` | `severity` | no | Final severity. For AI findings: `rules_severity` raised one step when confidence is low, capped at S4 (C15, D1) | R2, R3, R4 |
 | `confidence` | `confidence` | no | `high`, `medium`, `low` | R2 |
 | `severity_raised_reason` | text | yes | Required when `severity > rules_severity` (C15) | R4 |
 | `possible_staining` | boolean | no | default `false`. "Flagged as possible staining" (PRD risks) | P-RISK |
@@ -437,7 +444,7 @@ A signed set of findings for one or more inspections (P-OBJ).
 |---|---|---|---|---|
 | `id`, `org_id` | uuid | no | | |
 | `title` | text | no | | |
-| `status` | `report_status` | no | `draft`, `signed` | R9 |
+| `status` | `report_status` | no | `draft`, `signed`, `void` | R9, D7 |
 | `created_by`, `created_at`, `updated_at` | | | | |
 | `signed_by` | uuid | yes | FK `profile`; role `inspector` or `admin` | R9 |
 | `signed_at` | timestamptz | yes | | R9 |
@@ -446,8 +453,13 @@ A signed set of findings for one or more inspections (P-OBJ).
 | `disclaimer_version` | text | yes | Version of the "screening only" wording printed (P-SCREEN) | P-SCREEN |
 | `pdf_path` | text | yes | `{org_id}/{report_id}.pdf` in the `reports` bucket | P-PDF |
 | `pdf_sha256` | text | yes | Hash of the signed PDF, so tampering is detectable | P-PDF |
+| `replaces_report_id` | uuid | yes | FK `(org_id, id)` on `report`; the voided report this one replaces. Unique (C34) | D7 |
+| `voided_by` | uuid | yes | FK `profile`; role `inspector` or `admin` | D7 |
+| `voided_at` | timestamptz | yes | | D7 |
+| `void_reason` | text | yes | Required when voided (C33) | D7 |
 
-When `status = 'signed'`, every signing column above is required (C26).
+When `status` is `signed` or `void`, every signing column above is required (C26). When `status = 'void'`,
+the three void columns are required too (C33). Voiding never changes the signed content or the PDF.
 
 #### E22 `report_inspection`
 
@@ -456,10 +468,33 @@ Which inspections a report covers.
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | `report_id` | uuid | no | FK `(org_id, report_id)` |
-| `inspection_id` | uuid | no | FK `(org_id, inspection_id)`; **unique**: an inspection appears in one report only (A20) |
+| `inspection_id` | uuid | no | FK `(org_id, inspection_id)`; in at most one report that is not `void` (C29, A20, D7) |
 | `org_id` | uuid | no | |
 
 Primary key `(report_id, inspection_id)`. A report covers at least one inspection when signed (C27).
+An inspection can appear in a voided report and again in the report that replaces it.
+
+### 4.7 Audit
+
+#### E23 `audit_event`
+
+Append-only record of the actions that matter for accountability (D8). Written by database
+triggers in the same transaction as the action, so an action cannot happen without its record.
+
+| Column | Type | Null | Notes | Rule |
+|---|---|---|---|---|
+| `id` | bigint | no | Identity, increasing | D8 |
+| `org_id` | uuid | no | FK `organisation` | D8 |
+| `occurred_at` | timestamptz | no | default `now()` | D8 |
+| `actor_id` | uuid | yes | FK `profile`; null only when the server acts without a user | D8 |
+| `actor_kind` | `audit_actor_kind` | no | `user` or `server` | D8 |
+| `action` | `audit_action` | no | See section 5 | D8 |
+| `entity_type` | text | no | Table name, for example `report` | D8 |
+| `entity_id` | uuid | no | | D8 |
+| `details` | jsonb | no | default `{}`. Action-specific facts, for example the void reason, the old and new severity of an edit, the PDF hash | D8 |
+
+Actions recorded (C35): report signed, report voided, escalation acknowledged, finding review
+(accept, edit, reject), and inspector revision after a void.
 
 ## 5. Enumerations
 
@@ -477,14 +512,16 @@ Primary key `(report_id, inspection_id)`. A report covers at least one inspectio
 | `inspection_status` | `draft`, `ready_for_signoff`, `reported` | R9 |
 | `gradeability` | `pending`, `gradeable`, `rejected` | R1 |
 | `photo_rejection_reason` | `out_of_focus`, `uneven_lighting`, `glare`, `no_scale_reference`, `surface_not_visible` | R1, P-RISK |
-| `scale_reference` | `coin`, `ruler`, `marker`, `none` | R1 |
+| `scale_reference` | `anode_scale_card`, `ruler`, `tape_measure`, `none` | R1, D6 |
 | `finding_origin` | `ai`, `inspector` | R9 |
 | `defect_type` | `rusting`, `pitting`, `suspected_cracking`, `coating_breakdown`, `other` | P-OBJ |
 | `finding_status` | `draft`, `accepted`, `rejected`, `superseded` | R9 |
 | `escalation_reason` | `severity_s4`, `pressure_pitting_or_wall_loss`, `suspected_cracking`, `suspected_cui`, `injury_risk` | R5 |
 | `escalation_source` | `grading_rules`, `explain_step`, `inspector` | R5 |
 | `review_decision` | `accept`, `edit`, `reject` | R9 |
-| `report_status` | `draft`, `signed` | R9 |
+| `report_status` | `draft`, `signed`, `void` | R9, D7 |
+| `audit_actor_kind` | `user`, `server` | D8 |
+| `audit_action` | `report_signed`, `report_voided`, `escalation_acknowledged`, `finding_accepted`, `finding_edited`, `finding_rejected`, `finding_revised` | D8 |
 
 ## 6. Constraints
 
@@ -515,6 +552,7 @@ Rules that protect safety are enforced in the database even when the engine also
 | ID | Constraint | Where | Rule |
 |---|---|---|---|
 | C9 | `gradeability = 'gradeable'` requires `rejection_reasons = '{}'`, `scale_reference <> 'none'`, `mm_per_px > 0` and `checked_at` set | CHECK | R1 |
+| C9a | `colour_corrected = true` requires `scale_reference = 'anode_scale_card'` | CHECK | D6 |
 | C10 | `gradeability = 'rejected'` requires at least one rejection reason and `checked_at`. `scale_reference = 'none'` with `checked_at` set requires `no_scale_reference` in the reasons | CHECK | R1 |
 | C10a | Phase 1: at most one `gradeable` photo per inspection: partial unique index on `photo(inspection_id) where gradeability = 'gradeable'` | UNIQUE | P-SCOPE |
 | C10b | A photo's gradeability can change only from `pending`. A decided photo is never re-decided; a retake is a new photo | TRIGGER | R1 |
@@ -528,18 +566,20 @@ Rules that protect safety are enforced in the database even when the engine also
 | C12 | `origin = 'ai'` requires `measurement_id`, `grading_rules_version`, and `created_by is null`. The measurement belongs to the finding's photo | CHECK, TRIGGER | R2, P-AI |
 | C13 | `grade_value` lies within the cited standard's `grade_min..grade_max`; the standard is active at insert | TRIGGER | R2, P-CITE |
 | C14 | Every finding has exactly one `standard_id`, `grade_value`, `severity` and `confidence` (all `not null`) | CHECK | R2 |
-| C15 | Low confidence never produces S1: `not (confidence = 'low' and severity = 'S1')`. For AI findings `severity >= rules_severity`, and `severity_raised_reason` is non-empty exactly when `severity > rules_severity` | CHECK | R4 |
-| C15a | The grading engine raises severity for low confidence and writes the reason (step size is A16 / Q1) | ENGINE | R4 |
+| C15 | For AI findings only (D3): when `confidence = 'low'`, `severity` is exactly one step above `rules_severity`, or `S4` when `rules_severity = 'S4'`; otherwise `severity = rules_severity`. So an AI finding with low confidence is never S1. `severity_raised_reason` is non-empty exactly when `severity > rules_severity`. Medium and high confidence do not block S1 (D4) | CHECK | R4, D1 |
+| C15a | The grading engine applies the one-step raise and writes the reason; Stage 5 unit tests cover every level including the S4 cap | ENGINE | R4, D1 |
+| C15b | Inspector findings are exempt from C15: a qualified inspector may set any severity, including S1, with a reason (the review reason, C22, or `revision_reason`, C21a) | CHECK | D3 |
 | C16 | Escalations are append-only: no `delete`; `update` only sets the three acknowledgement columns, once. Acknowledgement needs a non-empty note | TRIGGER | R5 |
 | C16a | A finding with `severity = 'S4'` must have a `severity_s4` escalation. Checked by a deferred constraint trigger at commit | TRIGGER | R5 |
-| C16b | The grading engine adds: `injury_risk` when the asset has `failure_could_injure`; `pressure_pitting_or_wall_loss` when the asset `is_pressure_containing` and the defect is pitting or a pitting hypothesis is ranked; `suspected_cui` when the asset `is_insulated` or a `cui` hypothesis is ranked; `suspected_cracking` when the defect type or the explain step says so | ENGINE | R5 |
+| C16b | The grading engine adds: `injury_risk` on every finding when the asset has `failure_could_injure`, whatever the severity, S1 included (D2); `pressure_pitting_or_wall_loss` when the asset `is_pressure_containing` and the defect is pitting or a pitting hypothesis is ranked; `suspected_cui` when the asset `is_insulated` or a `cui` hypothesis is ranked; `suspected_cracking` when the defect type or the explain step says so | ENGINE | R5 |
 | C16c | The explain step and inspectors may add escalations; nobody may remove one | TRIGGER | R5 |
 | C17 | `mechanism_hypothesis`: `rank between 1 and 3`; unique rank and unique mechanism per finding (so at most three); `visual_evidence` non-empty. A `possibility_only` mechanism (MIC) cannot be rank 1 | CHECK, UNIQUE, TRIGGER | R7, P-MECH |
 | C18 | `hypothesis_evidence.context_answer_id` belongs to the same inspection as the hypothesis's finding | TRIGGER | R7 |
 | C19 | `measurement`, AI `finding` content columns, `mechanism_hypothesis`, `hypothesis_evidence` and `finding_recommendation` rows of an AI finding are immutable after insert. Only `finding.status` can change, and only as section 7 allows | TRIGGER | R9, P-AI |
 | C19a | The explain step cannot change a grade: it has no write path to `grade_value`, `rules_severity`, `severity` or `confidence`. Enforced by C19 and by Stage 8 code with a test | TRIGGER, code | P-AI |
 | C20 | `origin = 'inspector'` requires `created_by` (role `inspector` or `admin`), `status = 'accepted'` at insert, and `measurement_id` may be null | CHECK, TRIGGER | R9 |
-| C21 | `supersedes_finding_id` is set only on `inspector` findings, points at an `ai` finding in the same inspection, and is unique (one revision per AI finding) | CHECK, UNIQUE, TRIGGER | R9 |
+| C21 | `supersedes_finding_id` is set only on `inspector` findings, points at a finding in the same inspection, and is unique (each finding is superseded at most once). It points either at an `ai` `draft` finding (an edit at review, C22) or at an `accepted` finding whose inspection was released by a void (C21a) | CHECK, UNIQUE, TRIGGER | R9, D7 |
+| C21a | After a void, an inspector may revise an accepted finding by inserting a superseding `inspector` finding with a non-empty `revision_reason`; the old finding moves to `superseded`. Only allowed while the inspection is `draft` and has been in a voided report | CHECK, TRIGGER | D7 |
 | C22 | `finding_review`: unique per `finding_id`; target finding is `ai` and `draft`; `revised_finding_id` set exactly when `decision = 'edit'`; `reason` non-empty for `edit` and `reject`. Inserting a review moves the finding to `accepted`, `superseded` or `rejected` in the same transaction | CHECK, UNIQUE, TRIGGER | R9 |
 | C23 | Reviews are immutable once written, so edits are kept as training feedback | TRIGGER | R9 |
 | C24 | `finding_recommendation.recommendation_code` references the library and was active at insert; `recommendation_version` equals the library's current version at insert | FK, TRIGGER | R8 |
@@ -549,12 +589,21 @@ Rules that protect safety are enforced in the database even when the engine also
 | ID | Constraint | Where | Rule |
 |---|---|---|---|
 | C25 | An inspection moves to `ready_for_signoff` only when it has at least one finding and no finding is `draft` | TRIGGER | R9 |
-| C26 | `report.status = 'signed'` requires `signed_by`, `signed_at`, `signer_name`, `disclaimer_version`, `pdf_path` and a 64-hex `pdf_sha256` | CHECK | R9, P-PDF |
+| C26 | `report.status in ('signed', 'void')` requires `signed_by`, `signed_at`, `signer_name`, `disclaimer_version`, `pdf_path` and a 64-hex `pdf_sha256` | CHECK | R9, P-PDF |
 | C27 | A report can be signed only when it covers at least one inspection, every covered inspection is `ready_for_signoff`, and every escalation on their findings is acknowledged. Signing sets the inspections to `reported` | TRIGGER (in `sign_report`) | R5, R9 |
 | C28 | Signing happens only through the `sign_report` database function called by the server; clients cannot set `status = 'signed'` directly | RLS, function | R9 |
-| C29 | `report_inspection.inspection_id` is unique: an inspection is reported once | UNIQUE | A20 |
-| C30 | Once a report is signed: the report, its `report_inspection` rows, the covered inspections and everything beneath them (photos, answers, measurements, findings, escalations, hypotheses, recommendations, reviews) cannot be updated or deleted, and their assets and points cannot be hard-deleted | TRIGGER | R9 |
+| C29 | An inspection is in at most one report whose status is not `void`. Checked on insert into `report_inspection` and again inside `sign_report`, with row locks | TRIGGER | A20, D7 |
+| C30 | A signed report is never edited or deleted. Its content columns, its `report_inspection` rows and its PDF object are immutable; the only change allowed is the `signed` → `void` transition (C33). While a report is `signed`, the covered inspections and everything beneath them cannot be updated or deleted. Assets and points under any signed or voided report cannot be hard-deleted | TRIGGER | R9, D7 |
 | C31 | Every report PDF prints the "screening only" disclaimer (version recorded in `disclaimer_version`) | Code (Stage 9) | P-SCREEN |
+| C33 | Voiding goes only through the `void_report` database function: allowed only from `signed`; sets `voided_by` (inspector or admin of the org), `voided_at` and a non-empty `void_reason`; moves the covered inspections from `reported` back to `draft` so they can be corrected (C21a). `void` is final | CHECK, TRIGGER, function | D7 |
+| C34 | `replaces_report_id` points at a `void` report in the same organisation and is unique, so a voided report has at most one replacement. A replacement report and every later PDF show which report it replaces | CHECK, UNIQUE, TRIGGER | D7 |
+
+### Audit (D8)
+
+| ID | Constraint | Where | Rule |
+|---|---|---|---|
+| C35 | Triggers write an `audit_event` row in the same transaction for: report signed, report voided, escalation acknowledged, each finding review (accept, edit, reject) and each post-void revision | TRIGGER | D8 |
+| C36 | `audit_event` is append-only: `update`, `delete` and `truncate` are refused for every role, the service role included. Users never insert directly; only the triggers do | TRIGGER, RLS | D8 |
 
 ### Scope
 
@@ -583,9 +632,11 @@ stateDiagram-v2
     draft --> accepted: inspector accepts
     draft --> superseded: inspector edits (new inspector finding, status accepted)
     draft --> rejected: inspector rejects (reason required)
+    accepted --> superseded: revised after a void (C21a)
 ```
 
-Inspector findings are created as `accepted` and have no further transitions.
+Inspector findings are created as `accepted`. Their only later transition is to `superseded`,
+when revised after a void (C21a).
 
 ### Inspection and report
 
@@ -595,11 +646,22 @@ stateDiagram-v2
     draft --> ready_for_signoff: every finding decided
     ready_for_signoff --> draft: new photo or finding added
     ready_for_signoff --> reported: included in a signed report
-    reported --> [*]: locked
+    reported --> draft: report voided (C33)
 ```
 
-A report is `draft` until `sign_report` succeeds, then `signed` and locked. Phase 1 has no
-void or amend path (Q8).
+### Report
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft: created
+    draft --> signed: sign_report (all checks pass)
+    signed --> void: void_report (reason required)
+    void --> [*]: kept forever, replaced by a new report that links to it
+```
+
+A signed report is never edited or deleted. To correct one, an inspector voids it with a reason,
+corrects the inspections (C21a), and signs a new report whose `replaces_report_id` points at the
+voided one (D7).
 
 ## 8. Indexes
 
@@ -623,8 +685,9 @@ Every foreign key gets an index, because Postgres does not create them automatic
 | `hypothesis_evidence` | PK; `(context_answer_id)` | FK |
 | `finding_recommendation` | PK; `(recommendation_code)` | FK; library usage |
 | `finding_review` | unique `(finding_id)`; `(org_id, reviewed_at desc)`; `(revised_finding_id)` | Feedback export (R9) |
-| `report` | `(org_id, status, created_at desc)` | Report list |
-| `report_inspection` | PK; unique `(inspection_id)` | C29 |
+| `report` | `(org_id, status, created_at desc)`; unique `(replaces_report_id) where replaces_report_id is not null` | Report list; C34 |
+| `report_inspection` | PK; `(inspection_id)` | C29 lookups |
+| `audit_event` | `(org_id, occurred_at desc)`; `(entity_type, entity_id)` | Audit timeline; history of one record |
 
 ## 9. Permissions
 
@@ -633,9 +696,9 @@ Every foreign key gets an index, because Postgres does not create them automatic
 | Role | Who | Can |
 |---|---|---|
 | `admin` | Organisation owner. In Phase 1 every user is the admin of their own organisation (A2) | Everything an inspector can, plus rename the organisation and manage memberships |
-| `inspector` | A person who captures, reviews and signs | Create and edit assets, points, inspections, photos and answers; review findings; acknowledge escalations; sign reports |
+| `inspector` | A person who captures, reviews and signs | Create and edit assets, points, inspections, photos and answers; review findings; acknowledge escalations; sign and void reports |
 | `viewer` | Someone who reads results (an asset owner or facility manager) | Read everything in the organisation, download signed reports. No writes |
-| server (service role) | The app's server code: grading engine, measurement client, explain step, PDF generator | Write AI output; run `sign_report` on behalf of a verified inspector |
+| server (service role) | The app's server code: grading engine, measurement client, explain step, PDF generator | Write AI output; run `sign_report` and `void_report` on behalf of a verified inspector |
 | `anon` | Not signed in | Nothing. The public demo uses a signed-in demo user (A25) |
 
 ### Table permissions (row-level security)
@@ -659,8 +722,9 @@ a user never sees another organisation's rows.
 | `finding_escalation` | read | read; insert with `source = 'inspector'`; acknowledge | same | insert (`grading_rules`, `explain_step`) |
 | `mechanism_hypothesis`, `hypothesis_evidence`, `finding_recommendation` | read | read; insert for own `inspector` findings | same | insert for `ai` findings |
 | `finding_review` | read | read, insert | same | |
-| `report` | read `signed` only | read, insert, update while `draft` | same | `sign_report` |
-| `report_inspection` | read for signed reports | read, insert, delete while report `draft` | same | |
+| `report` | read `signed` and `void` only | read, insert, update while `draft` | same | `sign_report`, `void_report` |
+| `report_inspection` | read for signed and void reports | read, insert, delete while report `draft` | same | |
+| `audit_event` | none | read | read | inserted by triggers only (C35, C36) |
 
 No user role has `delete` on anything except draft `report_inspection` rows, draft reports, and
 memberships (admin). Archiving replaces deleting.
@@ -670,7 +734,7 @@ memberships (admin). Archiving replaces deleting.
 | Bucket | Path | Read | Write |
 |---|---|---|---|
 | `inspection-photos` (private) | `{org_id}/{inspection_id}/{photo_id}.{ext}` | Members of `org_id`, via short-lived signed URLs | Inspector or admin of `org_id`, while the inspection is `draft`. No overwrite, no delete |
-| `reports` (private) | `{org_id}/{report_id}.pdf` | Members of `org_id` | Server only, inside `sign_report` |
+| `reports` (private) | `{org_id}/{report_id}.pdf` | Members of `org_id` | Server only, inside `sign_report`. No overwrite, no delete, even after a void |
 
 ## 10. Traceability
 
@@ -681,12 +745,12 @@ memberships (admin). Archiving replaces deleting.
 | R1 | Grade only gradeable photos (focus, light, scale reference) | `photo`, `measurement`, `finding` | C9, C10, C10b, C11 |
 | R2 | One grade, one severity, one confidence per finding | `finding`, `standard` | C13, C14 |
 | R3 | Severity S1 to S4 drives a fixed action | `severity_level`, `finding` | C2, `severity` enum |
-| R4 | Low confidence never gives S1; round up and say why | `finding.rules_severity`, `severity`, `severity_raised_reason` | C15, C15a |
+| R4 | Low confidence never gives S1; round up and say why | `finding.rules_severity`, `severity`, `severity_raised_reason` | C15, C15a, C15b |
 | R5 | Mandatory escalation list | `asset` R5 flags, `finding_escalation`, `mechanism.escalation_reason` | C16, C16a, C16b, C16c, C27 |
 | R6 | Depth and wall loss never from a photo | `measurement` (no depth columns) | C11a |
 | R7 | Up to three ranked mechanisms with evidence | `mechanism_hypothesis`, `hypothesis_evidence`, `context_question`, `context_answer` | C8, C17, C18 |
 | R8 | Recommendations from a fixed library | `recommendation`, `finding_recommendation` | C2, C24 |
-| R9 | A human signs; AI stays draft; edits kept as feedback | `finding.status`, `finding_review`, `report` | C3, C19, C20 to C23, C25 to C30 |
+| R9 | A human signs; AI stays draft; edits kept as feedback | `finding.status`, `finding_review`, `report`, `audit_event` | C3, C19, C20 to C23, C25 to C30, C33 to C36 |
 | R10 | Trend beats snapshot | `inspection_point`, `inspection.inspected_at` | Index on `(point_id, inspected_at)`; trend flags are Phase 2 |
 
 ### Other PRD requirements
@@ -701,6 +765,7 @@ memberships (admin). Archiving replaces deleting.
 | P-RISK | Staining flagged; glare and blur caught (Risks) | `finding.possible_staining`, `photo_rejection_reason` |
 | P-SCREEN | "Screening only" on every report (Risks; Stage 9) | `report.disclaimer_version`, C31 |
 | P-PDF | Signed PDF report downloads (Stage 9) | `report.pdf_path`, `pdf_sha256`, `reports` bucket |
+| D1 to D9 | Michael's Stage 1 decisions | See section 13 |
 
 ## 11. Deferred to later phases
 
@@ -714,8 +779,6 @@ Not migrated in Stage 2. Listed so Phase 1 does not paint them into a corner.
 | ASTM D610 / ISO 8501-1 grading | Later | `standard` and `grade_scale` are tables/enums built to grow |
 | Fracture surfaces | 3 | `defect_type` and `mechanism` are extendable |
 | Team invitations, offline sync, asset register import | 4 | Multi-member organisations and client-supplied UUIDs already work |
-| Report void and amendment | Q8 | Signed reports are locked |
-| General audit log | Q9 | Immutable findings, reviews and signed reports are the Phase 1 audit trail |
 
 ## 12. Assumptions
 
@@ -735,13 +798,13 @@ model changes before Stage 2.
 
 - **A9.** Material, coating, environment and insulation are properties of the asset; per-visit observations (standing water, contact with another metal, likely staining source) are context questions on the inspection.
 - **A10.** The three escalation flags on an asset (`is_pressure_containing`, `is_insulated`, `failure_could_injure`) must be answered explicitly when the asset is created, with no default, because a wrong default would silently skip a rule-5 escalation.
-- **A11.** Enumerations for asset type, material and environment are a reasonable first cut; each has `other`. Michael should check the lists (Q5).
+- **A11.** Enumerations for asset type, material and environment are a reasonable first cut; each has `other`. Accepted (D9); to be tuned after real use.
 - **A13.** Phase 1 produces one AI finding per inspection: one gradeable photo, one whole-photo Ri grade. Inspectors may add extra findings of their own. The schema allows many findings per inspection.
 - **A14.** Several inspections per point are allowed in Phase 1 (the data costs nothing), but history and trend screens wait for Phase 2.
 
 **Photos and measurement**
 
-- **A5.** A scale reference is required for every graded photo, not only for size measurements. The PRD flow sends any "unscaled photo" back for a retake.
+- **A5.** A scale reference is required for every graded photo, not only for size measurements. The PRD flow sends any "unscaled photo" back for a retake. Accepted scale references are set by D6.
 - **A6.** Rejected photos are kept, not deleted, so the retake trail is visible and can improve the check.
 - **A7.** EXIF location data is stripped from stored photos; location belongs on the asset.
 - **A8.** The gradeability check is run server-side (or confirmed server-side) and its result is written by the server; the client cannot mark its own photo gradeable.
@@ -750,9 +813,9 @@ model changes before Stage 2.
 
 **Grading and escalation**
 
-- **A16.** Rule 4 "rounds the severity up" is read as: when confidence is `low`, the severity goes up **one step** (S1→S2, S2→S3, S3→S4), not only away from S1. The database guarantees the minimum (never low + S1); the one-step rule lives in the engine. A raise into S4 triggers the S4 escalation. (Q1)
+- **A16.** Rule 4 "rounds the severity up" means: when confidence is `low`, the severity goes up **one step** at every level (S1→S2, S2→S3, S3→S4), capped at S4. A raise into S4 triggers the S4 escalation. **Confirmed (D1).**
 - **A23.** The Ri-to-severity mapping (which Ri gives which S level) is part of the Stage 5 grading engine, not this model. It is recorded per finding through `rules_severity` and `grading_rules_version`.
-- **A24.** Rule 5's "any asset where failure could injure people" is applied literally: every finding on such an asset escalates, whatever its grade. (Q2)
+- **A24.** Rule 5's "any asset where failure could injure people" is applied literally: every finding on such an asset escalates, whatever its grade, S1 included. **Confirmed (D2)** for Phase 1; may be tuned after real use.
 - **A28.** "Pressure-containing equipment showing pitting or wall loss" is detected in Phase 1 from the defect type or a ranked pitting hypothesis, because wall loss needs thickness readings (Phase 2).
 - **A29.** "Suspected CUI" is raised whenever the asset is insulated or `cui` is among the ranked mechanisms.
 - **A30.** The explain step (Claude) may add escalations, for example suspected cracking, but cannot remove one or change any grade, severity or confidence. Adding an escalation only makes the result more cautious, so it does not conflict with "it cannot change a grade".
@@ -763,8 +826,8 @@ model changes before Stage 2.
 
 - **A17.** An inspector edit never overwrites the AI finding. It creates a new `inspector` finding that supersedes it, and the review links the two. That keeps the AI output intact as training feedback (rule 9) and lets the same constraints apply to edited findings.
 - **A18.** Edits and rejections need a short reason; acceptances do not.
-- **A32.** Rule 4 binds AI findings only. An inspector editing a finding is a qualified human and may set any severity, including S1, but must give a reason. (Q3)
-- **A20.** An inspection appears in exactly one report. A report may cover several inspections, from any points in the organisation.
+- **A32.** Rule 4 binds AI findings only. An inspector editing a finding is a qualified human and may set any severity, including S1, but must give a reason. **Confirmed (D3).**
+- **A20.** An inspection appears in at most one report that is not void (amended by D7). A report may cover several inspections, from any points in the organisation.
 - **A33.** A report may be signed even when all its findings were rejected (for example the photo showed staining, not rust); the report then states no corrosion findings were accepted.
 - **A34.** Escalations must be acknowledged with a note by an inspector before signing. Acknowledging means "a qualified person has seen this", not "resolved".
 - **A15.** Recommendation wording is versioned; a finding records the version it used so old reports reprint identically.
@@ -773,19 +836,36 @@ model changes before Stage 2.
 
 - **A27.** The gold set (about 200 labelled photos), training data and evaluation results live with the measurement model (Colab, storage, `docs/evaluation.md`), not in the app database. The gold set is never used for training, which is easier to guarantee when it is kept apart.
 - **A25.** The public demo (Stage 10) is an ordinary organisation flagged `is_demo`, used through a signed-in demo user and reset on a schedule. No special-case schema.
-- **A35.** Account and data deletion requests (privacy law) are out of Phase 1 scope; with `on delete restrict`, a user with signed reports cannot be hard-deleted. (Q9)
-- **A36.** The PRD's MVP scope line says "Ri / D610 grade", but the later decision fixes Phase 1 to coated steel on ISO 4628-3 only. The decision wins; D610 is deferred.
+- **A35.** Account and data deletion requests (privacy law) are out of Phase 1 scope; with `on delete restrict`, a user with signed reports cannot be hard-deleted.
+- **A36.** The PRD's MVP scope line says "Ri / D610 grade", but the later decision fixes Phase 1 to coated steel on ISO 4628-3 only. The decision wins; D610 is deferred. **Confirmed (D9).**
 
-## 13. Questions for Michael
+**Added with the Stage 1 decisions** (new; included in the Stage 1 pull request for review)
 
-The model works with the assumptions above; these are the ones where your judgement matters most.
+- **A37.** The scale card's grey and colour patches are used for colour correction. Whether correction was applied is recorded per photo (`colour_corrected`). The card's exact dimensions, patch colours and print specification are designed in Stage 7, when the capture flow is built.
+- **A38.** A voided report releases its inspections back to `draft` so they can be corrected. Corrections never edit an existing finding or review: the inspector adds a superseding inspector finding with a reason, and the old finding becomes `superseded`. What was signed stays provable from the voided report's PDF and hash.
+- **A39.** Once an inspection is back in `draft` after a void, it cannot take a second gradeable photo (C10a still holds). A new photo means a new inspection.
+- **A40.** The audit log records every finding review (accept and reject as well as edit) and every post-void revision, not only edits, because the cost is small and sign-off is not traceable without them.
+- **A41.** Inspectors and admins can read their organisation's audit log; viewers cannot. Audit events are kept forever.
+- **A42.** A replacement report may cover different inspections from the report it replaces (for example, one inspection removed). It only has to link to the voided report.
 
-- **Q1 (A16).** Low confidence: raise severity one step at every level, or only lift S1 to S2?
-- **Q2 (A24).** Injury-risk assets: escalate every finding, even an S1, or only S2 and above?
-- **Q3 (A32).** May an inspector set S1 on a finding the AI graded with low confidence?
-- **Q4.** Should confidence `medium` also block S1, or only `low` as rule 4 says?
-- **Q5 (A11).** Are the asset-type, material and environment lists right for your field work?
-- **Q6.** The Phase 1 recommendation library and context questions: will you write them, or should I draft a list for you to correct in Stage 2?
-- **Q7.** What scale references count: coin, ruler, printed marker? Which coins are common and consistent enough on site to use?
-- **Q8.** Signed reports cannot be changed. Do you need a "void and reissue" path in Phase 1, or later?
-- **Q9.** Is a general audit log needed in Phase 1, and how should account deletion work once a user has signed reports?
+## 13. Decisions
+
+Made by Michael on 18 Nov 2026 when approving Stage 1.
+
+| ID | Decision | Effect on the model |
+|---|---|---|
+| D1 | Low confidence raises severity **one step at every level**, capped at S4 | A16 confirmed; C15, C15a |
+| D2 | Every finding on an injury-risk asset escalates, **even S1**, in Phase 1. Safety first; tune after real use | A24 confirmed; C16b |
+| D3 | Rule 4 applies **only to AI findings**. A qualified inspector may set S1 with a reason | A32 confirmed; C15b |
+| D4 | **Medium confidence does not block S1.** Only low confidence does | C15 |
+| D5 | Claude drafts the **recommendation library and context questions in Stage 5**; Michael corrects them as the domain expert | E7, E8 |
+| D6 | Scale references: a **printed Anode scale card** (known size plus grey and colour patches for colour correction) is preferred; a **ruler or tape measure** is accepted; **coins are not**, because sizes vary | `scale_reference` enum, `photo.colour_corrected`, C9a, A37 |
+| D7 | **Void and reissue in Phase 1.** A signed report is never edited or deleted; it can be voided with a reason and replaced by a new report that links to it | `report` void columns, `replaces_report_id`, C26, C29, C30, C33, C34, A38, A39, A42 |
+| D8 | **Audit log in Phase 1.** Append-only; records signing, voiding, escalation acknowledgements and finding edits | E23 `audit_event`, C35, C36, A40, A41 |
+| D9 | D610 is deferred; Phase 1 is **ISO 4628-3 only** (A36). All other assumptions, A1 to A35, are accepted | |
+
+Still open, to be settled in the stage that needs it:
+
+- The Anode scale card's specification (size, patches, print tolerance): Stage 7 (A37).
+- The recommendation library and context-question wording: Stage 5 (D5).
+- The Ri-to-severity mapping and confidence thresholds: Stage 5 (A19, A23).
