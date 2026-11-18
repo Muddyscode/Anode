@@ -24,6 +24,7 @@ listed in [section 13](#13-decisions).
 11. [Deferred to later phases](#11-deferred-to-later-phases)
 12. [Assumptions](#12-assumptions)
 13. [Decisions](#13-decisions)
+14. [Implementation notes (Stage 2)](#14-implementation-notes-stage-2)
 
 ---
 
@@ -189,7 +190,7 @@ The fixed recommendation library (R8). The explain step can only reference rows 
 
 | Column | Type | Null | Notes |
 |---|---|---|---|
-| `code` | text | no | PK, for example `ut_thickness_grid`, `remove_insulation_inspect`, `check_dissimilar_metal_contact` |
+| `code` | text | no | for example `ut_thickness_grid`, `remove_insulation_inspect`, `check_dissimilar_metal_contact`. Primary key is `(code, version)`, with at most one active version per code (§14) |
 | `text` | text | no | The sentence printed on the report |
 | `version` | integer | no | Bumped when the wording changes; old versions kept (A15) |
 | `min_severity` | `severity` | yes | Optional floor; for example a UT grid is not offered for S1 |
@@ -571,7 +572,7 @@ Rules that protect safety are enforced in the database even when the engine also
 | C15b | Inspector findings are exempt from C15: a qualified inspector may set any severity, including S1, with a reason (the review reason, C22, or `revision_reason`, C21a) | CHECK | D3 |
 | C16 | Escalations are append-only: no `delete`; `update` only sets the three acknowledgement columns, once. Acknowledgement needs a non-empty note | TRIGGER | R5 |
 | C16a | A finding with `severity = 'S4'` must have a `severity_s4` escalation. Checked by a deferred constraint trigger at commit | TRIGGER | R5 |
-| C16b | The grading engine adds: `injury_risk` on every finding when the asset has `failure_could_injure`, whatever the severity, S1 included (D2); `pressure_pitting_or_wall_loss` when the asset `is_pressure_containing` and the defect is pitting or a pitting hypothesis is ranked; `suspected_cui` when the asset `is_insulated` or a `cui` hypothesis is ranked; `suspected_cracking` when the defect type or the explain step says so | ENGINE | R5 |
+| C16b | The grading engine adds: `injury_risk` on every finding when the asset has `failure_could_injure`, whatever the severity, S1 included (D2); `pressure_pitting_or_wall_loss` when the asset `is_pressure_containing` and the defect is pitting or a pitting hypothesis is ranked; `suspected_cui` when the asset `is_insulated` or a `cui` hypothesis is ranked; `suspected_cracking` when the defect type or the explain step says so. Stage 2 enforces every one of these that follows from stored data in database triggers too (§14) | TRIGGER, ENGINE | R5 |
 | C16c | The explain step and inspectors may add escalations; nobody may remove one | TRIGGER | R5 |
 | C17 | `mechanism_hypothesis`: `rank between 1 and 3`; unique rank and unique mechanism per finding (so at most three); `visual_evidence` non-empty. A `possibility_only` mechanism (MIC) cannot be rank 1 | CHECK, UNIQUE, TRIGGER | R7, P-MECH |
 | C18 | `hypothesis_evidence.context_answer_id` belongs to the same inspection as the hypothesis's finding | TRIGGER | R7 |
@@ -579,7 +580,7 @@ Rules that protect safety are enforced in the database even when the engine also
 | C19a | The explain step cannot change a grade: it has no write path to `grade_value`, `rules_severity`, `severity` or `confidence`. Enforced by C19 and by Stage 8 code with a test | TRIGGER, code | P-AI |
 | C20 | `origin = 'inspector'` requires `created_by` (role `inspector` or `admin`), `status = 'accepted'` at insert, and `measurement_id` may be null | CHECK, TRIGGER | R9 |
 | C21 | `supersedes_finding_id` is set only on `inspector` findings, points at a finding in the same inspection, and is unique (each finding is superseded at most once). It points either at an `ai` `draft` finding (an edit at review, C22) or at an `accepted` finding whose inspection was released by a void (C21a) | CHECK, UNIQUE, TRIGGER | R9, D7 |
-| C21a | After a void, an inspector may revise an accepted finding by inserting a superseding `inspector` finding with a non-empty `revision_reason`; the old finding moves to `superseded`. Only allowed while the inspection is `draft` and has been in a voided report | CHECK, TRIGGER | D7 |
+| C21a | After a void, an inspector may revise an accepted finding by inserting a superseding `inspector` finding with a non-empty `revision_reason`; the old finding moves to `superseded`. Only allowed while the inspection is not `reported` and has been in a voided report | CHECK, TRIGGER | D7 |
 | C22 | `finding_review`: unique per `finding_id`; target finding is `ai` and `draft`; `revised_finding_id` set exactly when `decision = 'edit'`; `reason` non-empty for `edit` and `reject`. Inserting a review moves the finding to `accepted`, `superseded` or `rejected` in the same transaction | CHECK, UNIQUE, TRIGGER | R9 |
 | C23 | Reviews are immutable once written, so edits are kept as training feedback | TRIGGER | R9 |
 | C24 | `finding_recommendation.recommendation_code` references the library and was active at insert; `recommendation_version` equals the library's current version at insert | FK, TRIGGER | R8 |
@@ -595,7 +596,7 @@ Rules that protect safety are enforced in the database even when the engine also
 | C29 | An inspection is in at most one report whose status is not `void`. Checked on insert into `report_inspection` and again inside `sign_report`, with row locks | TRIGGER | A20, D7 |
 | C30 | A signed report is never edited or deleted. Its content columns, its `report_inspection` rows and its PDF object are immutable; the only change allowed is the `signed` → `void` transition (C33). While a report is `signed`, the covered inspections and everything beneath them cannot be updated or deleted. Assets and points under any signed or voided report cannot be hard-deleted | TRIGGER | R9, D7 |
 | C31 | Every report PDF prints the "screening only" disclaimer (version recorded in `disclaimer_version`) | Code (Stage 9) | P-SCREEN |
-| C33 | Voiding goes only through the `void_report` database function: allowed only from `signed`; sets `voided_by` (inspector or admin of the org), `voided_at` and a non-empty `void_reason`; moves the covered inspections from `reported` back to `draft` so they can be corrected (C21a). `void` is final | CHECK, TRIGGER, function | D7 |
+| C33 | Voiding goes only through the `void_report` database function: allowed only from `signed`; sets `voided_by` (inspector or admin of the org), `voided_at` and a non-empty `void_reason`; releases the covered inspections from `reported` to their derived status (normally `ready_for_signoff`) so they can be corrected (C21a) and reported again. `void` is final | CHECK, TRIGGER, function | D7 |
 | C34 | `replaces_report_id` points at a `void` report in the same organisation and is unique, so a voided report has at most one replacement. A replacement report and every later PDF show which report it replaces | CHECK, UNIQUE, TRIGGER | D7 |
 
 ### Audit (D8)
@@ -646,7 +647,7 @@ stateDiagram-v2
     draft --> ready_for_signoff: every finding decided
     ready_for_signoff --> draft: new photo or finding added
     ready_for_signoff --> reported: included in a signed report
-    reported --> draft: report voided (C33)
+    reported --> ready_for_signoff: report voided (C33)
 ```
 
 ### Report
@@ -842,7 +843,7 @@ model changes before Stage 2.
 **Added with the Stage 1 decisions** (new; included in the Stage 1 pull request for review)
 
 - **A37.** The scale card's grey and colour patches are used for colour correction. Whether correction was applied is recorded per photo (`colour_corrected`). The card's exact dimensions, patch colours and print specification are designed in Stage 7, when the capture flow is built.
-- **A38.** A voided report releases its inspections back to `draft` so they can be corrected. Corrections never edit an existing finding or review: the inspector adds a superseding inspector finding with a reason, and the old finding becomes `superseded`. What was signed stays provable from the voided report's PDF and hash.
+- **A38.** A voided report releases its inspections (to `ready_for_signoff`, §14) so they can be corrected. Corrections never edit an existing finding or review: the inspector adds a superseding inspector finding with a reason, and the old finding becomes `superseded`. What was signed stays provable from the voided report's PDF and hash.
 - **A39.** Once an inspection is back in `draft` after a void, it cannot take a second gradeable photo (C10a still holds). A new photo means a new inspection.
 - **A40.** The audit log records every finding review (accept and reject as well as edit) and every post-void revision, not only edits, because the cost is small and sign-off is not traceable without them.
 - **A41.** Inspectors and admins can read their organisation's audit log; viewers cannot. Audit events are kept forever.
@@ -869,3 +870,36 @@ Still open, to be settled in the stage that needs it:
 - The Anode scale card's specification (size, patches, print tolerance): Stage 7 (A37).
 - The recommendation library and context-question wording: Stage 5 (D5).
 - The Ri-to-severity mapping and confidence thresholds: Stage 5 (A19, A23).
+
+## 14. Implementation notes (Stage 2)
+
+Where the Stage 2 migrations make a rule more precise than sections 4 to 9 state it. None of these
+changes a decision; each is covered by the pgTAP tests in `supabase/tests`.
+
+1. **Inspection status is derived.** The database sets it from the findings: `ready_for_signoff` when
+   the inspection has findings and none is `draft`, otherwise `draft`, and `reported` while it is in a
+   signed report. Nobody sets it directly. "Open" (photos, answers and findings can still be added)
+   means "not `reported`".
+2. **Voiding releases inspections to their derived status**, normally `ready_for_signoff`, not to
+   `draft`. C21a therefore allows a revision while the inspection is not `reported`.
+3. **Recommendation versions are rows.** `recommendation` has primary key `(code, version)` and a
+   partial unique index allowing one active version per code, so old wording is kept (A15) and
+   `finding_recommendation` references the exact `(code, version)` it used.
+4. **Inspector findings carry `rules_severity = severity`.** No rule adjustment applies to a person's
+   judgement (D3), and the column stays `not null`.
+5. **Escalations that follow from stored data are added by the database.** S4, injury risk (D2),
+   insulated asset, pitting on pressure equipment, suspected cracking, and escalating mechanisms
+   (CUI, or pitting on pressure equipment) are inserted by triggers when the finding or hypothesis is
+   written, so no client or server path can skip them. The grading engine and explain step may add
+   others; duplicates are ignored.
+6. **Signing needs every escalation acknowledged** on every finding of the covered inspections,
+   including rejected and superseded ones, so an S4 cannot be rejected and signed past unseen.
+7. **Signing checks the PDF exists.** `sign_report` refuses unless the PDF object is already in the
+   `reports` bucket at `{org_id}/{report_id}.pdf`.
+8. **`sign_report(report, signer, pdf_path, pdf_sha256, disclaimer_version)` and
+   `void_report(report, actor, reason)`** are callable by the server (service role) only.
+9. **Uploader and author roles.** A photo's `uploaded_by` must be an inspector or admin of the
+   organisation. A report's `created_by` may be null when the server creates it.
+10. **Named constraints.** Key check constraints have readable names (for example
+    `finding_low_confidence_raises_severity`, `photo_gradeable_needs_scale`) for API error mapping in
+    Stage 3.

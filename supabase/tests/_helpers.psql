@@ -1,0 +1,176 @@
+-- Shared helpers for the pgTAP tests. Included by each *.test.sql file with \ir,
+-- inside that file's transaction, so everything here is rolled back afterwards.
+
+create schema tests;
+grant usage on schema tests to public;
+
+-- A stable uuid for a test name, so files can refer to people by name.
+create function tests.uid(p_name text) returns uuid
+language sql immutable as $$ select md5('anode-test-' || p_name)::uuid $$;
+
+-- Creates a signed-up user (trigger creates profile, personal organisation, admin membership).
+create function tests.create_user(p_name text) returns uuid
+language sql as $$
+  insert into auth.users (id, aud, role, email, raw_user_meta_data)
+  values (tests.uid(p_name), 'authenticated', 'authenticated', p_name || '@anode.test',
+          jsonb_build_object('display_name', initcap(p_name)))
+  returning id
+$$;
+
+-- The organisation a user created at sign-up (where they are admin).
+create function tests.org_of(p_name text) returns uuid
+language sql stable as $$
+  select m.org_id from public.membership m
+   where m.user_id = tests.uid(p_name) and m.role = 'admin'
+   order by m.created_at limit 1
+$$;
+
+-- Acts as a signed-in user for the rest of the transaction (until RESET ROLE).
+create function tests.authenticate_as(p_name text) returns void
+language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', tests.uid(p_name), 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+end
+$$;
+
+-- Standard cast: alice (admin of org A), ivan (inspector in A), vera (viewer in A),
+-- bruno (admin of org B).
+create function tests.setup_people() returns void
+language plpgsql as $$
+begin
+  perform tests.create_user('alice');
+  perform tests.create_user('ivan');
+  perform tests.create_user('vera');
+  perform tests.create_user('bruno');
+  insert into public.membership (org_id, user_id, role) values
+    (tests.org_of('alice'), tests.uid('ivan'), 'inspector'),
+    (tests.org_of('alice'), tests.uid('vera'), 'viewer');
+end
+$$;
+
+create function tests.standard_id() returns uuid
+language sql stable as $$ select id from public.standard where code = 'ISO 4628-3' and edition = '2016' $$;
+
+-- An asset, point, draft inspection, gradeable photo and measurement in p_owner's
+-- organisation, created as the database owner. Returns the ids as JSON.
+create function tests.make_fixture(
+  p_owner text,
+  p_injury boolean default false,
+  p_insulated boolean default false,
+  p_pressure boolean default false
+) returns jsonb
+language plpgsql as $$
+declare
+  v_org uuid := tests.org_of(p_owner);
+  v_user uuid := tests.uid(p_owner);
+  v_asset uuid := gen_random_uuid();
+  v_point uuid := gen_random_uuid();
+  v_inspection uuid := gen_random_uuid();
+  v_photo uuid := gen_random_uuid();
+  v_measurement uuid := gen_random_uuid();
+begin
+  insert into public.asset (id, org_id, name, asset_type, material, coating_status, environment,
+    is_insulated, is_pressure_containing, failure_could_injure, created_by)
+  values (v_asset, v_org, 'Test asset ' || left(v_asset::text, 8), 'pipe', 'carbon_steel', 'coated',
+    'atmospheric_marine', p_insulated, p_pressure, p_injury, v_user);
+  insert into public.inspection_point (id, org_id, asset_id, label, created_by)
+  values (v_point, v_org, v_asset, 'Point 1', v_user);
+  insert into public.inspection (id, org_id, point_id, inspector_id)
+  values (v_inspection, v_org, v_point, v_user);
+  insert into public.photo (id, org_id, inspection_id, storage_path, content_sha256, mime_type, width_px, height_px,
+    gradeability, scale_reference, mm_per_px, checked_at, uploaded_by)
+  values (v_photo, v_org, v_inspection, v_org || '/' || v_inspection || '/' || v_photo || '.jpg',
+    repeat('c', 64), 'image/jpeg', 1000, 800, 'gradeable', 'ruler', 0.1, now(), v_user);
+  insert into public.measurement (id, org_id, photo_id, model_name, model_version, percent_area_rusted,
+    outline, model_confidence)
+  values (v_measurement, v_org, v_photo, 'test-model', '1', 1.0,
+    '{"type": "MultiPolygon", "coordinates": []}', 0.9);
+  return jsonb_build_object('org', v_org, 'asset', v_asset, 'point', v_point, 'inspection', v_inspection,
+    'photo', v_photo, 'measurement', v_measurement);
+end
+$$;
+
+-- Inserts an AI finding the way the grading engine will: low confidence raises
+-- the rules severity one step (D1). Returns its id.
+create function tests.ai_finding(
+  fx jsonb,
+  p_rules public.severity,
+  p_confidence public.confidence default 'high',
+  p_defect public.defect_type default 'rusting',
+  p_grade smallint default 2
+) returns uuid
+language plpgsql as $$
+declare
+  v_id uuid := gen_random_uuid();
+  v_severity public.severity := case when p_confidence = 'low'
+    then private.severity_step_up(p_rules) else p_rules end;
+begin
+  insert into public.finding (id, org_id, inspection_id, photo_id, measurement_id, origin, defect_type, standard_id,
+    grade_value, rules_severity, severity, confidence, severity_raised_reason, grading_rules_version)
+  values (v_id, (fx ->> 'org')::uuid, (fx ->> 'inspection')::uuid, (fx ->> 'photo')::uuid,
+    (fx ->> 'measurement')::uuid, 'ai', p_defect, tests.standard_id(), p_grade, p_rules, v_severity, p_confidence,
+    case when v_severity > p_rules then 'Low confidence: raised one step.' end, 'test-rules-1');
+  return v_id;
+end
+$$;
+
+-- Accepts every draft finding of an inspection and acknowledges every escalation,
+-- as p_reviewer, so the inspection is ready for sign-off.
+create function tests.make_ready(fx jsonb, p_reviewer text) returns void
+language plpgsql as $$
+declare
+  f record;
+begin
+  update public.finding_escalation e
+     set acknowledged_by = tests.uid(p_reviewer), acknowledged_at = now(), acknowledgement_note = 'Seen.'
+    from public.finding fi
+   where fi.id = e.finding_id and fi.inspection_id = (fx ->> 'inspection')::uuid and e.acknowledged_at is null;
+  for f in select id from public.finding where inspection_id = (fx ->> 'inspection')::uuid and status = 'draft' loop
+    insert into public.finding_review (org_id, finding_id, decision, reviewed_by)
+    values ((fx ->> 'org')::uuid, f.id, 'accept', tests.uid(p_reviewer));
+  end loop;
+end
+$$;
+
+-- A draft report covering one inspection, with its PDF object stored.
+create function tests.make_report(fx jsonb, p_author text, p_replaces uuid default null) returns uuid
+language plpgsql as $$
+declare
+  v_report uuid := gen_random_uuid();
+begin
+  insert into public.report (id, org_id, title, created_by, replaces_report_id)
+  values (v_report, (fx ->> 'org')::uuid, 'Test report', tests.uid(p_author), p_replaces);
+  insert into public.report_inspection (report_id, inspection_id, org_id)
+  values (v_report, (fx ->> 'inspection')::uuid, (fx ->> 'org')::uuid);
+  insert into storage.objects (bucket_id, name) values ('reports', (fx ->> 'org') || '/' || v_report || '.pdf');
+  return v_report;
+end
+$$;
+
+create function tests.pdf_path(fx jsonb, p_report uuid) returns text
+language sql immutable as $$ select (fx ->> 'org') || '/' || p_report || '.pdf' $$;
+
+-- Named values shared between statements of a test file, readable by any role.
+create table tests.saved (name text primary key, value jsonb not null);
+grant select on tests.saved to public;
+
+create function tests.save(p_name text, p_value jsonb) returns jsonb
+language sql as $$
+  insert into tests.saved (name, value) values (p_name, p_value)
+  on conflict (name) do update set value = excluded.value
+  returning value
+$$;
+
+create function tests.save_id(p_name text, p_id uuid) returns uuid
+language sql as $$ select (tests.save(p_name, to_jsonb(p_id)) #>> '{}')::uuid $$;
+
+create function tests.get(p_name text) returns jsonb
+language sql stable as $$ select value from tests.saved where name = p_name $$;
+
+create function tests.id(p_name text) returns uuid
+language sql stable as $$ select (value #>> '{}')::uuid from tests.saved where name = p_name $$;
+
+create function tests.fx(p_name text, p_key text) returns uuid
+language sql stable as $$ select (value ->> p_key)::uuid from tests.saved where name = p_name $$;
