@@ -172,7 +172,8 @@ describe("asset register and answers", () => {
   };
   it("A10: the escalation flags must be answered", () => {
     expect(CreateAssetInput.safeParse(asset).success).toBe(true);
-    const { failureCouldInjure: _omit, ...missing } = asset;
+    const missing: Partial<typeof asset> = { ...asset };
+    delete missing.failureCouldInjure;
     expect(CreateAssetInput.safeParse(missing).success).toBe(false);
   });
   it("C6: latitude and longitude come together", () => {
