@@ -1,0 +1,34 @@
+name: Database
+
+on:
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "scripts/db-test.sh"
+      - "scripts/db/**"
+      - ".github/workflows/database.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - "scripts/db-test.sh"
+      - "scripts/db/**"
+      - ".github/workflows/database.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  migrations:
+    name: Migrations, seed and pgTAP tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Postgres 16, pgTAP and pg_prove
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16 postgresql-16-pgtap libtap-parser-sourcehandler-pgtap-perl shellcheck
+      - name: Lint the test runner
+        run: shellcheck scripts/db-test.sh
+      - name: Run database tests
+        run: scripts/db-test.sh

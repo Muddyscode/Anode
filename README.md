@@ -80,7 +80,7 @@ Built one stage at a time, each approved before the next begins.
 | # | Stage | Status |
 |---|---|---|
 | 1 | Domain model ([`docs/domain-model.md`](docs/domain-model.md)) | Approved |
-| 2 | Database (Supabase migrations, row-level security) | Not started |
+| 2 | Database ([`docs/database.md`](docs/database.md)) | In review |
 | 3 | API contracts (`docs/api.md`) | Not started |
 | 4 | Design system | Not started |
 | 5 | Grading engine | Not started |
@@ -107,6 +107,7 @@ Built one stage at a time, each approved before the next begins.
 - [`docs/PRD.md`](docs/PRD.md): product requirements, business rules, build stages
 - [`docs/domain-model.md`](docs/domain-model.md): entities, constraints, indexes and permissions, traced to the business rules
 - [`docs/decisions.md`](docs/decisions.md): decisions and instructions per stage
+- [`docs/database.md`](docs/database.md): migrations, row-level security, seed data and how to run the database tests
 - `docs/evaluation.md`: gold-set results (from Stage 6)
 
 ## Standards
