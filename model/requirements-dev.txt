@@ -1,0 +1,10 @@
+# Tests and lint, without torch: the server and harness are tested with a fake predictor.
+fastapi==0.115.6
+pydantic==2.10.4
+httpx==0.28.1
+numpy==2.2.1
+pillow==11.1.0
+opencv-python-headless==4.10.0.84
+pytest==8.3.4
+jsonschema==4.23.0
+ruff==0.8.6

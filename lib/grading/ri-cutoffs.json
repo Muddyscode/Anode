@@ -1,0 +1,11 @@
+{
+  "_comment": "D10/D12: percent of area rusted to ISO 4628-3 Ri, rounding up. Shared by lib/grading (TypeScript) and model/ (Python). Changing it changes grades: bump GRADING_RULES_VERSION.",
+  "bands": [
+    { "ri": 0, "upTo": 0 },
+    { "ri": 1, "upTo": 0.05 },
+    { "ri": 2, "upTo": 0.5 },
+    { "ri": 3, "upTo": 1 },
+    { "ri": 4, "upTo": 8 },
+    { "ri": 5, "upTo": 100 }
+  ]
+}

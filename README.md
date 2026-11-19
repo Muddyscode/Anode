@@ -83,8 +83,8 @@ Built one stage at a time, each approved before the next begins.
 | 2 | Database ([`docs/database.md`](docs/database.md)) | Done |
 | 3 | API contracts ([`docs/api.md`](docs/api.md)) | Done |
 | 4 | Design system ([`docs/design-system.md`](docs/design-system.md), `/design`) | Done |
-| 5 | Grading engine ([`docs/grading.md`](docs/grading.md)) | In review |
-| 6 | Measurement model | Not started |
+| 5 | Grading engine ([`docs/grading.md`](docs/grading.md)) | Done |
+| 6 | Measurement model ([`model/`](model), [`docs/evaluation.md`](docs/evaluation.md)) | 6a in review; 6b waits for the gold set |
 | 7 | Inspection flow | Not started |
 | 8 | Explain step | Not started |
 | 9 | Sign-off and report | Not started |
