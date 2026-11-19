@@ -868,8 +868,8 @@ Made by Michael on 18 Nov 2026 when approving Stage 1.
 Still open, to be settled in the stage that needs it:
 
 - The Anode scale card's specification (size, patches, print tolerance): Stage 7 (A37).
-- The recommendation library and context-question wording: Stage 5 (D5).
-- The Ri-to-severity mapping and confidence thresholds: Stage 5 (A19, A23).
+- The recommendation library and context-question wording: drafted in Stage 5, awaiting Michael's corrections (D5).
+- The Ri-to-severity mapping and confidence thresholds: decided in Stage 5 (D12, [`grading.md`](grading.md)).
 
 ## 14. Implementation notes (Stage 2)
 

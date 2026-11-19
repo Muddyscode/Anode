@@ -59,3 +59,19 @@ Merged through #4.
 - Add a `/design` page that shows them all.
 - Do not invent any colours or components that are not in the system; ask Michael first.
 - Implemented in [`design-system.md`](design-system.md).
+
+## Stage 4: Design system (merged 19 Nov 2026)
+
+Merged through #5. The source design system was updated with the D11 colours.
+
+## Stage 5: Grading engine (decisions given 19 Nov 2026)
+
+- **D12: grading rules.** Recorded in [`grading.md`](grading.md) and `lib/grading/rules.ts`:
+  - Percent rusted to Ri rounds up to the next published ISO 4628-3 value (0; 0.05; 0.5; 1; 8;
+    above 8 is Ri 5), so Anode never under-grades.
+  - Ri 0 to 1 is S1, Ri 2 to 3 is S2, Ri 4 is S3, Ri 5 is S4.
+  - Pitting is at least S3; suspected cracking is S4.
+  - Model confidence 0.85 or more is high, 0.60 or more is medium, below is low; to be
+    recalibrated on the gold set in Stage 6.
+- The recommendation library and context questions are a first draft for Michael to correct (D5).
+
