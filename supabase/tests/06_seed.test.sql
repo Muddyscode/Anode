@@ -36,8 +36,8 @@ select set_eq(
 select is((select count(*)::int from public.inspection i join public.organisation o on o.id = i.org_id
             where o.name = 'Other Fabrication Ltd'), 1,
   'a second organisation exists for isolation checks');
-select ok((select bool_and(code like 'dev\_%') from public.recommendation),
-  'seeded recommendations are clearly marked dev fixtures (D5)');
+select ok((select bool_and(text like 'DEV FIXTURE:%') from public.recommendation where code like 'dev\_%'),
+  'dev fixture recommendations are clearly marked');
 
 select * from finish();
 rollback;

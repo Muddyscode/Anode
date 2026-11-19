@@ -82,8 +82,8 @@ Built one stage at a time, each approved before the next begins.
 | 1 | Domain model ([`docs/domain-model.md`](docs/domain-model.md)) | Approved |
 | 2 | Database ([`docs/database.md`](docs/database.md)) | Done |
 | 3 | API contracts ([`docs/api.md`](docs/api.md)) | Done |
-| 4 | Design system ([`docs/design-system.md`](docs/design-system.md), `/design`) | In review |
-| 5 | Grading engine | Not started |
+| 4 | Design system ([`docs/design-system.md`](docs/design-system.md), `/design`) | Done |
+| 5 | Grading engine ([`docs/grading.md`](docs/grading.md)) | In review |
 | 6 | Measurement model | Not started |
 | 7 | Inspection flow | Not started |
 | 8 | Explain step | Not started |
@@ -120,6 +120,7 @@ scripts/db-test.sh     # database tests (Postgres 16 + pgTAP)
 - [`docs/domain-model.md`](docs/domain-model.md): entities, constraints, indexes and permissions, traced to the business rules
 - [`docs/decisions.md`](docs/decisions.md): decisions and instructions per stage
 - [`docs/database.md`](docs/database.md): migrations, row-level security, seed data and how to run the database tests
+- [`docs/grading.md`](docs/grading.md): how a measurement becomes a grade, a severity and escalations
 - [`docs/design-system.md`](docs/design-system.md): Galvanic Steel tokens and components, and how they are checked
 - [`docs/api.md`](docs/api.md): every server action and outside service, with inputs, outputs, errors and validation (Zod code in [`contracts/`](contracts))
 - `docs/evaluation.md`: gold-set results (from Stage 6)

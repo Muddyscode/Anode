@@ -54,6 +54,14 @@ select ok((select possibility_only from public.mechanism where code = 'mic'), 'M
 select is((select escalation_reason::text from public.mechanism where code = 'cui'), 'suspected_cui',
   'CUI as a mechanism escalates');
 
+-- Stage 5 draft library (D5).
+select ok((select count(*) from public.recommendation where is_active and code not like 'dev\_%') >= 10,
+  'the draft recommendation library is loaded');
+select is((select min_severity::text from public.recommendation where code = 'refer_qualified_inspector'), 'S4',
+  'referral to a qualified inspector is offered at S4');
+select ok((select count(*) from public.context_question where is_active and key not like 'dev\_%') >= 6,
+  'the draft context questions are loaded');
+
 -- Key indexes behind constraints.
 select has_index('public', 'photo', 'photo_one_gradeable', 'C10a index exists');
 select has_index('public', 'finding', 'finding_superseded_once', 'C21 index exists');
