@@ -80,8 +80,8 @@ Built one stage at a time, each approved before the next begins.
 | # | Stage | Status |
 |---|---|---|
 | 1 | Domain model ([`docs/domain-model.md`](docs/domain-model.md)) | Approved |
-| 2 | Database ([`docs/database.md`](docs/database.md)) | In review |
-| 3 | API contracts (`docs/api.md`) | Not started |
+| 2 | Database ([`docs/database.md`](docs/database.md)) | Done |
+| 3 | API contracts ([`docs/api.md`](docs/api.md)) | In review |
 | 4 | Design system | Not started |
 | 5 | Grading engine | Not started |
 | 6 | Measurement model | Not started |
@@ -108,6 +108,7 @@ Built one stage at a time, each approved before the next begins.
 - [`docs/domain-model.md`](docs/domain-model.md): entities, constraints, indexes and permissions, traced to the business rules
 - [`docs/decisions.md`](docs/decisions.md): decisions and instructions per stage
 - [`docs/database.md`](docs/database.md): migrations, row-level security, seed data and how to run the database tests
+- [`docs/api.md`](docs/api.md): every server action and outside service, with inputs, outputs, errors and validation (Zod code in [`contracts/`](contracts))
 - `docs/evaluation.md`: gold-set results (from Stage 6)
 
 ## Standards
