@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "e2e": "playwright test",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "schemas": "vite-node scripts/export-schemas.ts"
   },
   "dependencies": {
     "next": "15.5.29",

@@ -1,0 +1,10 @@
+# Model server runtime (Hugging Face Space). torch is installed separately in the Dockerfile (CPU build).
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+httpx==0.28.1
+numpy==2.2.1
+pillow==11.1.0
+opencv-python-headless==4.10.0.84
+segmentation-models-pytorch==0.5.0
+huggingface-hub==0.27.1

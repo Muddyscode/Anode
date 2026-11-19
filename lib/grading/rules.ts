@@ -2,6 +2,7 @@
 // Changing any of them changes grades: bump GRADING_RULES_VERSION in the same change. Every
 // stored AI finding records the version that graded it (domain model C12).
 
+import riCutoffs from "./ri-cutoffs.json";
 import type { DefectType, Severity } from "./types";
 
 export const GRADING_RULES_VERSION = "2026-11-19.1";
@@ -12,15 +13,9 @@ export const STANDARD = { code: "ISO 4628-3", edition: "2016" } as const;
  * D12: percent of area rusted to ISO 4628-3 Ri, rounding up. A measurement gets the lowest grade
  * whose published rusted area (D10) is at or above it, so Anode never under-grades.
  * Published values: Ri 0: 0%, Ri 1: 0.05%, Ri 2: 0.5%, Ri 3: 1%, Ri 4: 8%, Ri 5: 40 to 50%.
+ * Kept in ri-cutoffs.json so the Python evaluation harness (model/) uses the same cut-offs.
  */
-export const RI_UPPER_BOUND_PERCENT: readonly { ri: number; upTo: number }[] = [
-  { ri: 0, upTo: 0 },
-  { ri: 1, upTo: 0.05 },
-  { ri: 2, upTo: 0.5 },
-  { ri: 3, upTo: 1 },
-  { ri: 4, upTo: 8 },
-  { ri: 5, upTo: 100 },
-];
+export const RI_UPPER_BOUND_PERCENT: readonly { ri: number; upTo: number }[] = riCutoffs.bands;
 
 /** D12: Ri to severity, before defect floors, the low-confidence step-up and escalation. */
 export const RI_SEVERITY: Readonly<Record<number, Severity>> = {

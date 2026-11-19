@@ -75,3 +75,15 @@ Merged through #5. The source design system was updated with the D11 colours.
     recalibrated on the gold set in Stage 6.
 - The recommendation library and context questions are a first draft for Michael to correct (D5).
 
+## Stage 5: Grading engine (merged 19 Nov 2026)
+
+Merged through #6.
+
+## Stage 6: Measurement model (decisions given 19 Nov 2026)
+
+- **D13: how Stage 6 runs.** Split into 6a (Colab notebook, model API, evaluation harness, results
+  on a held-out public test set) and 6b (the same harness on Michael's gold set once labelled).
+  Model: U-Net from segmentation_models_pytorch (MIT) with a ResNet-18 encoder. Hosting: a free
+  Hugging Face Space (CPU). Training data: only datasets under CC BY 4.0 or more permissive, with
+  attribution in `model/ATTRIBUTION.md`.
+
