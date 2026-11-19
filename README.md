@@ -81,8 +81,8 @@ Built one stage at a time, each approved before the next begins.
 |---|---|---|
 | 1 | Domain model ([`docs/domain-model.md`](docs/domain-model.md)) | Approved |
 | 2 | Database ([`docs/database.md`](docs/database.md)) | Done |
-| 3 | API contracts ([`docs/api.md`](docs/api.md)) | In review |
-| 4 | Design system | Not started |
+| 3 | API contracts ([`docs/api.md`](docs/api.md)) | Done |
+| 4 | Design system ([`docs/design-system.md`](docs/design-system.md), `/design`) | In review |
 | 5 | Grading engine | Not started |
 | 6 | Measurement model | Not started |
 | 7 | Inspection flow | Not started |
@@ -96,11 +96,23 @@ Built one stage at a time, each approved before the next begins.
 |---|---|
 | Web app | Next.js + TypeScript on Vercel, phone-first |
 | Data, auth, photos | Supabase: Postgres, Auth, Storage, row-level security |
-| UI | Tailwind CSS + Motion |
+| UI | Tailwind CSS 4 with the Galvanic Steel tokens; motion in CSS |
 | Explain step and report text | Claude API |
 | Measurement model | Segmentation model trained in Google Colab, served as a small Python API |
 | Reports | Server-generated PDF |
 | Tests | Vitest (grading rules and logic), Playwright (main flows) |
+
+## Develop
+
+Needs Node 22.
+
+```sh
+npm ci
+npm run dev            # http://localhost:3000/design
+npm run check          # lint, typecheck, unit tests
+npm run build && npm run e2e   # browser tests (Playwright, axe)
+scripts/db-test.sh     # database tests (Postgres 16 + pgTAP)
+```
 
 ## Documentation
 
@@ -108,6 +120,7 @@ Built one stage at a time, each approved before the next begins.
 - [`docs/domain-model.md`](docs/domain-model.md): entities, constraints, indexes and permissions, traced to the business rules
 - [`docs/decisions.md`](docs/decisions.md): decisions and instructions per stage
 - [`docs/database.md`](docs/database.md): migrations, row-level security, seed data and how to run the database tests
+- [`docs/design-system.md`](docs/design-system.md): Galvanic Steel tokens and components, and how they are checked
 - [`docs/api.md`](docs/api.md): every server action and outside service, with inputs, outputs, errors and validation (Zod code in [`contracts/`](contracts))
 - `docs/evaluation.md`: gold-set results (from Stage 6)
 

@@ -1,0 +1,95 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Type styles used by name on the /design page. */
+@source inline("text-{display,title,body,button,grade,marker,readout,label}");
+
+/* Galvanic Steel: base, materials and motion. Values come from app/tokens.css (generated). */
+
+@layer base {
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+  }
+  :focus-visible {
+    outline: 2px solid var(--cobalt);
+    outline-offset: 2px;
+  }
+}
+
+/* Brushed grain: the only texture, and only on panel surfaces (README, Materials). */
+.ds-grain {
+  background-color: var(--panel);
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, var(--grain-l)) 0px,
+    rgba(255, 255, 255, var(--grain-l)) 1px,
+    rgba(0, 0, 0, var(--grain-d)) 2px,
+    rgba(0, 0, 0, 0) 4px
+  );
+}
+
+/* Motion (README, Motion). Every animation has a final state shown under reduced motion. */
+
+/* Corrosion outline draws onto the photo over dur-outline. */
+@keyframes ds-outline-draw {
+  from { stroke-dashoffset: 900; }
+  to { stroke-dashoffset: 0; }
+}
+.ds-outline-draw {
+  stroke-dasharray: 900;
+  animation: ds-outline-draw var(--dur-outline) ease-out both;
+}
+
+/* While measuring, a pulse current laps the outline every dur-pulse. */
+.ds-outline-pulse {
+  stroke-dasharray: 28 872;
+  animation: ds-outline-draw var(--dur-pulse) linear var(--dur-outline) infinite;
+}
+
+/* Gauge needle sweeps from S1, overshoots once and settles over dur-needle. */
+@keyframes ds-needle {
+  0% { transform: rotate(0deg); }
+  65% { transform: rotate(calc(var(--needle-angle) + 10.5deg)); }
+  82% { transform: rotate(calc(var(--needle-angle) - 4.5deg)); }
+  100% { transform: rotate(var(--needle-angle)); }
+}
+.ds-needle {
+  transform-box: view-box;
+  transform-origin: 60px 60px;
+  transform: rotate(var(--needle-angle));
+  animation: ds-needle var(--dur-needle) cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both;
+}
+
+/* Severity marker slides in from the left like a label being fitted, over dur-marker. */
+@keyframes ds-marker-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.ds-marker-in {
+  animation: ds-marker-in var(--dur-marker) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Button press: 1px downward nudge over 80ms (Button guidelines). */
+.ds-press {
+  transition: transform 80ms ease-out;
+}
+.ds-press:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-outline-draw,
+  .ds-needle,
+  .ds-marker-in {
+    animation: none;
+  }
+  .ds-outline-draw { stroke-dashoffset: 0; }
+  .ds-outline-pulse { display: none; }
+  .ds-press,
+  .ds-press:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+}

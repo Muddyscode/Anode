@@ -38,7 +38,19 @@ Merged through #2 and #3. No new decisions; refinements are in [`domain-model.md
   item. This supersedes the PRD's "buying the current editions ... is a project cost" and "buy
   ISO 4628-3 first".
 
-## Stage 4: Design system (instructions given 18 Nov 2026)
+## Stage 3: API contracts (merged 19 Nov 2026)
+
+Merged through #4.
+
+## Stage 4: Design system (instructions given 18 Nov 2026; decision 19 Nov 2026)
+
+- **D11: severity and border colours adjusted for accessibility.** Checking the design system's
+  tokens showed that S1 and S4 look almost alike to red-blind users and S2 and S3 are close for
+  green-blind users, and that `line-strong` on `panel` was under 3:1. Michael approved:
+  `sev-1` `#1A5B3B`, `sev-2` `#E4AC25`, `sev-4` `#D33429` (S3 unchanged), and `line-strong`
+  `#74818E` light, `#5D6D85` dark. Every pair of severity colours now differs by at least ΔE 15
+  under typical vision, protanopia, deuteranopia and tritanopia, and a test keeps it that way.
+
 
 - Implement the design system from https://claude.ai/artifact/2yysQKathxmFxDts7L4xiA.
 - Read its README first, then `tokens.json`, then each component's guidelines.
@@ -46,3 +58,4 @@ Merged through #2 and #3. No new decisions; refinements are in [`domain-model.md
 - Build the seven components exactly as specified, with their animations and reduced-motion fallbacks.
 - Add a `/design` page that shows them all.
 - Do not invent any colours or components that are not in the system; ask Michael first.
+- Implemented in [`design-system.md`](design-system.md).
